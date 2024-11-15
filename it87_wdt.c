@@ -71,6 +71,7 @@
 #define IT8772_ID	0x8772
 #define IT8783_ID	0x8783
 #define IT8784_ID	0x8784
+#define IT8785_ID	0x8785
 #define IT8786_ID	0x8786
 
 /* GPIO Configuration Registers LDN=0x07 */
@@ -275,6 +276,7 @@ static int __init it87_wdt_init(void)
 
 	switch (chip_type) {
 	case IT8702_ID:
+	case IT8785_ID: /* Jetway JNC8H-IH310 BIOS watchdog timeout value only allows 0-255. */
 		max_units = 255;
 		break;
 	case IT8712_ID:
