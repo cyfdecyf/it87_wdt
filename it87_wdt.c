@@ -36,8 +36,11 @@
 #define DEFAULT_NOWAYOUT	WATCHDOG_NOWAYOUT
 
 /* IO Ports */
-#define REG		0x2e
-#define VAL		0x2f
+#define	REG_2E		0x2e	/* Secondary register to read/write */
+#define	REG_4E		0x4e	/* Secondary register to read/write */
+
+static int REG = REG_2E;
+static int VAL = REG_2E + 1;
 
 /* Logical device Numbers LDN */
 #define GPIO		0x07
@@ -105,6 +108,12 @@ MODULE_PARM_DESC(nowayout, "Watchdog cannot be stopped once started, default="
 
 /* Superio Chip */
 
+static inline void switch_reg(int reg)
+{
+	REG = reg;
+	VAL = reg + 1;
+}
+
 static inline int superio_enter(void)
 {
 	/*
@@ -116,7 +125,7 @@ static inline int superio_enter(void)
 	outb(0x87, REG);
 	outb(0x01, REG);
 	outb(0x55, REG);
-	outb(0x55, REG);
+	outb(REG == REG_4E ? 0xaa : 0x55, REG);
 	return 0;
 }
 
@@ -260,10 +269,8 @@ static struct watchdog_device wdt_dev = {
 	.min_timeout = 1,
 };
 
-static int __init it87_wdt_init(void)
+static int _detect_chip_type(u8* chip_rev)
 {
-	u8  chip_rev;
-	u8 ctrl;
 	int rc;
 
 	rc = superio_enter();
@@ -271,8 +278,50 @@ static int __init it87_wdt_init(void)
 		return rc;
 
 	chip_type = superio_inw(CHIPID);
-	chip_rev  = superio_inb(CHIPREV) & 0x0f;
+	if (chip_rev && chip_type != NO_DEV_ID) {
+		*chip_rev = superio_inb(CHIPREV) & 0x0f;
+	}
 	superio_exit();
+
+	return 0;
+}
+
+static int detect_chip_type(u8* chip_rev) {
+	int rc;
+	int saved_reg;
+
+	saved_reg = REG;
+	switch_reg(REG_2E);
+	rc = _detect_chip_type(chip_rev);
+	if (rc)
+		goto err;
+
+	if (chip_type == NO_DEV_ID) {
+		switch_reg(REG_4E);
+		rc = _detect_chip_type(chip_rev);
+		if (rc)
+			goto err;
+	}
+	if (chip_type == NO_DEV_ID) {
+		switch_reg(saved_reg);
+	}
+
+	return 0;
+
+err:
+	switch_reg(saved_reg);
+	return rc;
+}
+
+static int __init it87_wdt_init(void)
+{
+	u8  chip_rev;
+	u8  ctrl;
+	int rc;
+
+	rc = detect_chip_type(&chip_rev);
+	if (rc)
+		return rc;
 
 	switch (chip_type) {
 	case IT8702_ID:
